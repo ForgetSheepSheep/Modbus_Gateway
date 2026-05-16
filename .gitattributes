@@ -1,0 +1,42 @@
+# ============================================================
+# Git line ending rules
+# ============================================================
+
+* text=auto
+
+*.c       text eol=lf
+*.h       text eol=lf
+*.s       text eol=lf
+*.asm     text eol=lf
+*.ld      text eol=lf
+*.md      text eol=lf
+*.txt     text eol=lf
+*.json    text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.gitignore text eol=lf
+
+# Keil project files
+*.uvprojx text eol=crlf
+*.uvproj  text eol=crlf
+*.uvoptx  text eol=crlf
+*.uvopt   text eol=crlf
+
+# Firmware / binary files
+*.bin     binary
+*.axf     binary
+*.elf     binary
+
+# Intel HEX can be treated as text
+*.hex     text eol=crlf
+
+# Image / document / archive files
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.bmp     binary
+*.pdf     binary
+*.zip     binary
+*.rar     binary
+*.7z      binary
