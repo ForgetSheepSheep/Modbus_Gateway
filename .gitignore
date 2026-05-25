@@ -22,6 +22,7 @@ RTE/
 *.dep
 *.iex
 *.i
+.claude/
 *.bak
 *.tmp
 
