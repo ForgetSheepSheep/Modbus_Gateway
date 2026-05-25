@@ -2,6 +2,8 @@
 #include "component_crc32/component_crc32.h"
 #include "driver_gd25q128/driver_gd25q128.h"
 
+#include <stdio.h>
+
 /************************************************************
 * @brief ���̼����������ʷ�Χ�Ƿ�Ϸ�
 * @param offset �̼���������ƫ�Ƶ�ַ
@@ -101,6 +103,34 @@ uint8_t FlashFwReadDownload(uint32_t offset, uint8_t *buf, uint32_t len)
     }
 
     return DrvGD25Q128ReadBuf(FLASH_FW_DOWNLOAD_ADDR + offset, buf, len);
+}
+
+void FlashFwDebugDumpRaw(uint32_t addr, uint32_t len)
+{
+    uint8_t read_buf[32];
+    uint32_t i;
+
+    if(len > sizeof(read_buf))
+    {
+        len = sizeof(read_buf);
+    }
+
+    if(DrvGD25Q128ReadBuf(addr, read_buf, len) != ESUCCESS)
+    {
+        printf("[FLASH_FW] raw dump read failed addr=0x%08X len=%u\r\n",
+               (unsigned int)addr,
+               (unsigned int)len);
+        return;
+    }
+
+    printf("[FLASH_FW] raw dump addr=0x%08X len=%u:",
+           (unsigned int)addr,
+           (unsigned int)len);
+    for(i = 0; i < len; i++)
+    {
+        printf(" %02X", read_buf[i]);
+    }
+    printf("\r\n");
 }
 #define FLASH_FW_CRC_BUF_SIZE      256U
 /************************************************************

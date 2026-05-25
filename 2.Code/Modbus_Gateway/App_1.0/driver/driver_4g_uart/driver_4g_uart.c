@@ -11,13 +11,14 @@
 
 #define DRV_4G_DMA               DMA0
 #define DRV_4G_DMA_CH_RX         DMA_CH2
-#define DRV_4G_DMA_BUF_SIZE      256U
-#define DRV_4G_RING_BUF_SIZE     1024U
+#define DRV_4G_DMA_BUF_SIZE      512U
+#define DRV_4G_RING_BUF_SIZE     4096U
 #define DRV_4G_TX_TIMEOUT        200000U
 
 static uint8_t g_4g_dma_rx_buf[DRV_4G_DMA_BUF_SIZE];
 static uint8_t g_4g_ring_data[DRV_4G_RING_BUF_SIZE];
 static RingBuffer_t g_4g_ring_buf;
+static volatile uint32_t g_4g_uart_drop_count = 0;
 
 static void Drv4GUARTGpioInit(void);
 static void Drv4GUARTPeripheralInit(uint32_t baudrate);
@@ -71,6 +72,11 @@ uint8_t Drv4GUARTReadByte(uint8_t *pdata)
     return RingBufferRead(&g_4g_ring_buf, pdata);
 }
 
+uint32_t Drv4GUARTGetDropCount(void)
+{
+    return g_4g_uart_drop_count;
+}
+
 void Drv4GUARTIRQHandler(void)
 {
     uint16_t i;
@@ -93,7 +99,10 @@ void Drv4GUARTIRQHandler(void)
     {
         for(i = 0; i < recv_len; i++)
         {
-            RingBufferWrite(&g_4g_ring_buf, g_4g_dma_rx_buf[i]);
+            if(RingBufferWrite(&g_4g_ring_buf, g_4g_dma_rx_buf[i]) != ESUCCESS)
+            {
+                g_4g_uart_drop_count++;
+            }
         }
     }
 

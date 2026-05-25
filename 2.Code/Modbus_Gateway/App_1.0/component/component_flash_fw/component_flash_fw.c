@@ -2,6 +2,9 @@
 #include "component_crc32/component_crc32.h"
 #include "driver_gd25q128/driver_gd25q128.h"
 
+#include <stdio.h>
+#include <string.h>
+
 static uint8_t FlashFwCheckDownloadRange(uint32_t offset, uint32_t len)
 {
     if(len == 0)
@@ -45,6 +48,16 @@ uint8_t FlashFwEraseDownloadArea(void)
     return DrvGD25Q128EraseArea(FLASH_FW_DOWNLOAD_ADDR, FLASH_FW_AREA_SIZE);
 }
 
+uint8_t FlashFwEraseDownloadSize(uint32_t fw_size)
+{
+    if(fw_size == 0 || fw_size > FLASH_FW_AREA_SIZE)
+    {
+        return EFAIL;
+    }
+
+    return DrvGD25Q128EraseArea(FLASH_FW_DOWNLOAD_ADDR, fw_size);
+}
+
 uint8_t FlashFwWriteDownload(uint32_t offset, uint8_t *buf, uint32_t len)
 {
     if(buf == NULL)
@@ -73,6 +86,59 @@ uint8_t FlashFwReadDownload(uint32_t offset, uint8_t *buf, uint32_t len)
     }
 
     return DrvGD25Q128ReadBuf(FLASH_FW_DOWNLOAD_ADDR + offset, buf, len);
+}
+
+uint8_t FlashFwVerifyDownload(uint32_t offset, uint8_t *buf, uint32_t len)
+{
+    uint8_t read_buf[256];
+
+    if(buf == NULL)
+    {
+        return EFAIL;
+    }
+
+    if(len > sizeof(read_buf))
+    {
+        return EFAIL;
+    }
+
+    if(FlashFwReadDownload(offset, read_buf, len) != ESUCCESS)
+    {
+        return EFAIL;
+    }
+
+    if(memcmp(read_buf, buf, len) != 0)
+    {
+        return EFAIL;
+    }
+
+    return ESUCCESS;
+}
+
+void FlashFwDebugDump(uint32_t offset, uint32_t len)
+{
+    uint8_t read_buf[32];
+    uint32_t i;
+
+    if(len > sizeof(read_buf))
+    {
+        len = sizeof(read_buf);
+    }
+
+    if(FlashFwReadDownload(offset, read_buf, len) != ESUCCESS)
+    {
+        printf("[FLASH_FW] dump read failed offset=0x%08X len=%u\r\n",
+               (unsigned int)offset,
+               (unsigned int)len);
+        return;
+    }
+
+    printf("[FLASH_FW] dump offset=0x%08X len=%u:", (unsigned int)offset, (unsigned int)len);
+    for(i = 0; i < len; i++)
+    {
+        printf(" %02X", read_buf[i]);
+    }
+    printf("\r\n");
 }
 
 #define FLASH_FW_CRC_BUF_SIZE      256U
@@ -119,6 +185,50 @@ uint32_t FlashFwCalcDownloadCRC32(uint32_t fw_size)
     }
 
     crc ^= CRC32_XOR_VALUE;
+
+    return crc;
+}
+
+uint32_t FlashFwCalcDownloadCRC32Mpeg2(uint32_t fw_size)
+{
+    uint8_t read_buf[FLASH_FW_CRC_BUF_SIZE];
+    uint32_t crc;
+    uint32_t offset;
+    uint32_t read_len;
+
+    if(fw_size == 0)
+    {
+        return 0;
+    }
+
+    if(fw_size > FLASH_FW_AREA_SIZE)
+    {
+        return 0;
+    }
+
+    crc = CRC32_INIT_VALUE;
+    offset = 0;
+
+    while(offset < fw_size)
+    {
+        if((fw_size - offset) > FLASH_FW_CRC_BUF_SIZE)
+        {
+            read_len = FLASH_FW_CRC_BUF_SIZE;
+        }
+        else
+        {
+            read_len = fw_size - offset;
+        }
+
+        if(FlashFwReadDownload(offset, read_buf, read_len) != ESUCCESS)
+        {
+            return 0;
+        }
+
+        crc = ComponentCRC32Mpeg2Update(crc, read_buf, read_len);
+
+        offset += read_len;
+    }
 
     return crc;
 }

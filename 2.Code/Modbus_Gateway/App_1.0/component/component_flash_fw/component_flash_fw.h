@@ -23,9 +23,13 @@ typedef struct
 
 uint8_t  FlashFwInit(void);
 uint8_t  FlashFwEraseDownloadArea(void);
+uint8_t  FlashFwEraseDownloadSize(uint32_t fw_size);
 uint8_t  FlashFwWriteDownload(uint32_t offset, uint8_t *buf, uint32_t len);
 uint8_t  FlashFwReadDownload(uint32_t offset, uint8_t *buf, uint32_t len);
+uint8_t  FlashFwVerifyDownload(uint32_t offset, uint8_t *buf, uint32_t len);
+void     FlashFwDebugDump(uint32_t offset, uint32_t len);
 uint32_t FlashFwCalcDownloadCRC32(uint32_t fw_size);
+uint32_t FlashFwCalcDownloadCRC32Mpeg2(uint32_t fw_size);
 uint8_t  FlashFwWriteInfo(FlashFwInfo_t *info);
 uint8_t  FlashFwReadInfo(FlashFwInfo_t *info);
 uint8_t  FlashFwCheckInfo(FlashFwInfo_t *info);

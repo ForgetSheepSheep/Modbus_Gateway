@@ -24,6 +24,7 @@ typedef struct
     uint32_t request_id;
     uint32_t chunk_id;
     uint32_t request_bytes;
+    uint32_t recv_len;
     uint8_t  recv_buf[256];
     volatile uint8_t recv_flag;
     uint8_t  ota_trigger;

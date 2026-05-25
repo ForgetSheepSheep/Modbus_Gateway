@@ -20,11 +20,25 @@ uint8_t BootUpdateFromExternalFlash(void)
 
     printf("[UPDATE] check external flash firmware...\r\n");
 
+    if(FlashFwInit() != ESUCCESS)
+    {
+        printf("[UPDATE] external flash init error\r\n");
+        return EFAIL;
+    }
+
     if(FlashFwReadInfo(&info) != ESUCCESS)
     {
         printf("[UPDATE] read firmware info error\r\n");
         return EFAIL;
     }
+
+    printf("[UPDATE] info magic=0x%08X size=%u crc=0x%08X ver=%u addr=0x%08X\r\n",
+           (unsigned int)info.magic,
+           (unsigned int)info.fw_size,
+           (unsigned int)info.fw_crc32,
+           (unsigned int)info.fw_version,
+           (unsigned int)info.fw_addr);
+    FlashFwDebugDumpRaw(FLASH_FW_INFO_ADDR, sizeof(FlashFwInfo_t));
 
     if(FlashFwCheckInfo(&info) != ESUCCESS)
     {
@@ -35,7 +49,9 @@ uint8_t BootUpdateFromExternalFlash(void)
     crc32 = FlashFwCalcDownloadCRC32(info.fw_size);
     if(crc32 != info.fw_crc32)
     {
-        printf("[UPDATE] firmware crc error\r\n");
+        printf("[UPDATE] firmware crc error calc=0x%08X expect=0x%08X\r\n",
+               (unsigned int)crc32,
+               (unsigned int)info.fw_crc32);
         return EFAIL;
     }
 

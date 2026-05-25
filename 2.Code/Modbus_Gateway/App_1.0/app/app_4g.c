@@ -17,7 +17,7 @@
 #define APP_4G_AT_MQTT_FILTER   "AT+MQTTFILTER=0\r\n"
 #define APP_4G_AT_RESET         "AT+REST\r\n"
 #define APP_4G_EXPECT_OK        "OK\r\n"
-#define APP_4G_EXPECT_REST_OK   APP_4G_EXPECT_OK
+#define APP_4G_EXPECT_MQTT_CONNECT "MQTT_CONNECT:"
 
 typedef struct
 {
@@ -34,7 +34,7 @@ static App4GInitStep_t g_4g_init_steps[] =
     {"AT+MQSUBM=0,1,0,4,\"" APP_4G_SUB_RPC "\"\r\n",  APP_4G_EXPECT_OK, 3000},
     {"AT+MQSUBM=1,1,0,4,\"" APP_4G_SUB_ATTR "\"\r\n", APP_4G_EXPECT_OK, 3000},
     {"AT+MQSUBM=2,1,0,4,\"" APP_4G_SUB_OTA "\"\r\n",  APP_4G_EXPECT_OK, 3000},
-    {APP_4G_AT_RESET,       APP_4G_EXPECT_REST_OK, 10000},
+    {APP_4G_AT_RESET,       APP_4G_EXPECT_MQTT_CONNECT, 180000},
 };
 
 static uint8_t g_4g_ready = 0;
@@ -224,6 +224,7 @@ static void App4GProcessIncoming(void)
     static uint32_t ota_bytes_remaining = 0;
     static uint8_t ota_data_buf[512];
     static uint16_t ota_data_pos = 0;
+    static uint8_t ota_prefix_reported = 0;
     uint8_t ch = 0;
 
     while(Drv4GUARTReadByte(&ch) == ESUCCESS)
@@ -239,6 +240,7 @@ static void App4GProcessIncoming(void)
 
             if(ota_bytes_remaining == 0)
             {
+                printf("[4G-OTA] chunk recv done, len=%u\r\n", ota_data_pos);
                 ComponentOtaFeedChunk(ota_data_buf, ota_data_pos);
                 in_ota_chunk = 0;
                 ota_data_pos = 0;
@@ -262,29 +264,47 @@ static void App4GProcessIncoming(void)
             char *fw_resp = strstr((char *)line_buf, "v2/fw/response/");
             if(fw_resp != NULL)
             {
-                char *chunk_str = strstr(fw_resp, "/chunk/");
-                if(chunk_str != NULL)
+                char *p = fw_resp + strlen("v2/fw/response/");
+                char *endp = NULL;
+                unsigned long resp_request_id;
+                unsigned long resp_chunk_id;
+                unsigned long resp_bytes;
+
+                resp_request_id = strtoul(p, &endp, 10);
+                if(endp != p && strncmp(endp, "/chunk/", 7) == 0)
                 {
-                    char *comma = strchr(chunk_str + 7, ',');
-                    if(comma != NULL)
+                    p = endp + 7;
+                    resp_chunk_id = strtoul(p, &endp, 10);
+                    if(endp != p && *endp == ',')
                     {
-                        uint32_t ota_bytes = (uint32_t)strtoul(comma + 1, NULL, 10);
-                        if(ota_bytes > 0 && ota_bytes <= 256)
+                        p = endp + 1;
+                        resp_bytes = strtoul(p, &endp, 10);
+                        if(endp != p && *endp == ',')
                         {
-                            char *last_comma = strrchr((char *)line_buf, ',');
-                            if(last_comma != NULL)
+                            char *payload_start = endp + 1;
+
+                            if(resp_request_id == g_ota_info.request_id &&
+                               resp_chunk_id == g_ota_info.chunk_id &&
+                               resp_bytes > 0 &&
+                               resp_bytes <= sizeof(ota_data_buf))
                             {
-                                uint16_t data_start = (uint16_t)(last_comma - (char *)line_buf + 1);
+                                uint16_t data_start = (uint16_t)(payload_start - (char *)line_buf);
                                 uint16_t already = line_pos - data_start;
 
+                                if(already > resp_bytes)
+                                {
+                                    already = (uint16_t)resp_bytes;
+                                }
+
                                 ota_data_pos = 0;
+                                memset(ota_data_buf, 0, sizeof(ota_data_buf));
                                 if(already > 0)
                                 {
                                     memcpy(ota_data_buf, &line_buf[data_start], already);
                                     ota_data_pos = already;
                                 }
 
-                                ota_bytes_remaining = ota_bytes - already;
+                                ota_bytes_remaining = resp_bytes - already;
                                 if(ota_bytes_remaining > 0)
                                 {
                                     in_ota_chunk = 1;
@@ -297,7 +317,25 @@ static void App4GProcessIncoming(void)
                                     line_pos = 0;
                                     line_buf[0] = '\0';
                                 }
+
+                                printf("[4G-OTA] response matched id=%lu chunk=%lu bytes=%lu\r\n",
+                                       resp_request_id,
+                                       resp_chunk_id,
+                                       resp_bytes);
+                                ota_prefix_reported = 0;
                                 continue;
+                            }
+
+                            if(ota_prefix_reported == 0)
+                            {
+                                ota_prefix_reported = 1;
+                                printf("[4G-OTA] response mismatch id=%lu/%u chunk=%lu/%u bytes=%lu/%u\r\n",
+                                       resp_request_id,
+                                       (unsigned int)g_ota_info.request_id,
+                                       resp_chunk_id,
+                                       (unsigned int)g_ota_info.chunk_id,
+                                       resp_bytes,
+                                       (unsigned int)g_ota_info.request_bytes);
                             }
                         }
                     }
@@ -332,27 +370,41 @@ static void App4GProcessIncoming(void)
 
                 if(json_start != NULL)
                 {
-                    /* Check for attributes OTA notification */
+                    printf("[4G] json recv: %s\r\n", json_start);
+
                     if(strstr((char *)line_buf, "v1/devices/me/attributes") != NULL)
                     {
+                        printf("[4G] attributes topic detected\r\n");
                         if(strstr(json_start, "fw_title") != NULL)
                         {
-                            ComponentOtaParseNotify((uint8_t *)json_start);
-                            ComponentOtaTrigger();
+                            printf("[4G] OTA notify detected, parsing...\r\n");
+                            if(ComponentOtaParseNotify((uint8_t *)json_start) == ESUCCESS)
+                            {
+                                ComponentOtaTrigger();
+                                printf("[4G] OTA triggered\r\n");
+                            }
                         }
+
+                        line_pos = 0;
+                        line_buf[0] = '\0';
+                        ota_prefix_reported = 0;
+                        continue;
                     }
 
-                    /* Normal RPC command parsing */
-                    App4GCmd_t cmd;
-                    if(App4GPullData((uint8_t *)json_start, &cmd) == ESUCCESS)
+                    if(strstr((char *)line_buf, "v1/devices/me/rpc/request/") != NULL)
                     {
-                        g_4g_last_cmd = cmd;
-                        g_4g_cmd_pending = 1;
+                        App4GCmd_t cmd;
+                        if(App4GPullData((uint8_t *)json_start, &cmd) == ESUCCESS)
+                        {
+                            g_4g_last_cmd = cmd;
+                            g_4g_cmd_pending = 1;
+                        }
                     }
                 }
 
                 line_pos = 0;
                 line_buf[0] = '\0';
+                ota_prefix_reported = 0;
             }
         }
 
@@ -363,8 +415,10 @@ static void App4GProcessIncoming(void)
             brace_count = 0;
             in_json = 0;
             in_ota_chunk = 0;
+            memset(ota_data_buf, 0, sizeof(ota_data_buf));
             ota_data_pos = 0;
             ota_bytes_remaining = 0;
+            ota_prefix_reported = 0;
         }
     }
 }

@@ -33,3 +33,32 @@ uint32_t ComponentCRC32Calc(uint8_t *buf, uint32_t len)
 
     return crc;
 }
+
+uint32_t ComponentCRC32Mpeg2Update(uint32_t crc, uint8_t *buf, uint32_t len)
+{
+    uint32_t i;
+
+    while(len--)
+    {
+        crc ^= ((uint32_t)(*buf++)) << 24;
+
+        for(i = 0; i < 8; i++)
+        {
+            if(crc & 0x80000000UL)
+            {
+                crc = (crc << 1) ^ CRC32_MPEG2_POLY;
+            }
+            else
+            {
+                crc <<= 1;
+            }
+        }
+    }
+
+    return crc;
+}
+
+uint32_t ComponentCRC32Mpeg2Calc(uint8_t *buf, uint32_t len)
+{
+    return ComponentCRC32Mpeg2Update(CRC32_INIT_VALUE, buf, len);
+}

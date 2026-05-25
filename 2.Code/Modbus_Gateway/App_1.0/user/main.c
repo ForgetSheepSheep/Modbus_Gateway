@@ -7,7 +7,8 @@
 
 int main(void)
 {
-    SCB->VTOR = 0x08004000U;
+    SCB->VTOR = APP_START_ADDR;
+    __enable_irq();
 
     AppTaskInit();
     printf("[APP 1.0] started @ 0x%08X\r\n", (unsigned int)APP_START_ADDR);

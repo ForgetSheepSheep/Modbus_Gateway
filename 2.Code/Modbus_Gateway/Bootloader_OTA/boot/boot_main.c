@@ -29,10 +29,12 @@ typedef enum
 } BootState_e;
 
 static BootState_e g_boot_state = BOOT_STATE_INIT;
+static uint8_t g_boot_ota_flag_pending = 0;
 
 void BootMainInit(void)
 {
     g_boot_state = BOOT_STATE_INIT;
+    g_boot_ota_flag_pending = 0;
 }
 
 /************************************************************
@@ -124,9 +126,8 @@ void BootMainProcess(void)
             if(BootCheckOtaFlag() == 1)
             {
                 printf("OTA FLAG DETECTED\r\n");
+                g_boot_ota_flag_pending = 1;
                 BootPrintOtaInfo();
-                BootClearOtaFlag();
-                printf("OTA FLAG CLEARED\r\n");
                 g_boot_state = BOOT_STATE_UPDATE_FROM_EXT_FLASH;
             }
             else
@@ -140,6 +141,12 @@ void BootMainProcess(void)
         {
             if(BootUpdateFromExternalFlash() == ESUCCESS)
             {
+                if(g_boot_ota_flag_pending == 1)
+                {
+                    BootClearOtaFlag();
+                    printf("OTA FLAG CLEARED\r\n");
+                    g_boot_ota_flag_pending = 0;
+                }
                 printf("JUMP TO NEW APP\r\n");
                 g_boot_state = BOOT_STATE_JUMP_APP;
             }
